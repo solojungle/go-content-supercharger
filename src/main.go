@@ -1,6 +1,28 @@
 package main
 
+import "os"
+
 func main() {}
+
+func generateChunks(path string) {
+
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+
+	// release_manifest.bin
+
+	defer f.Close()
+
+	// Store in hashtable
+
+	// get chunks from files
+	// save chunks
+	// create manifest
+	//
+
+}
 
 func generatePatches(dir string) {
 

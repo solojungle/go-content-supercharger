@@ -130,15 +130,27 @@ func (d *Divider) Next() (Chunk, error) {
 		return Chunk{}, err
 	}
 
-	if 
+	if len(d.buffer) == 0 {
+		return Chunk{}, io.EOF
+	}
 
+	breakpoint, fp := d.fastCDC(d.buffer[d.cursor:])
 
+	chunk := Chunk{
+		offset: d.offset,
+		length: breakpoint,
+		data: d.buffer[d.cursor : d.cursor + breakpoint]
+		fingerprint: fp,
+	}
 
-	return Chunk{}, nil
+	d.cursor += breakpoint
+	d.offset += breakpoint
+
+	return chunk, nil
 }
 
-// Return chunking breakpoint
-func (d *Divider) fastCDC(buffer []byte) uint {
+// Return chunking breakpoint, and hash
+func (d *Divider) fastCDC(buffer []byte) (uint, uint64) {
 
 	bufferLength := uint(len(buffer))
 	breakpoint := d.minSize
@@ -149,7 +161,7 @@ func (d *Divider) fastCDC(buffer []byte) uint {
 
 	// If the buffer is too small
 	if bufferLength <= d.minSize {
-		return bufferLength
+		return bufferLength, fp
 	}
 
 	// Truncate buffer to max length
@@ -163,7 +175,7 @@ func (d *Divider) fastCDC(buffer []byte) uint {
 	for ; breakpoint < normSize; breakpoint++ {
 		fp = (fp << 1) + gear[buffer[breakpoint]]
 		if (fp & d.masks.S) == 0 {
-			return breakpoint
+			return breakpoint, fp
 		}
 	}
 
@@ -171,11 +183,11 @@ func (d *Divider) fastCDC(buffer []byte) uint {
 	for ; breakpoint < bufferLength; breakpoint++ {
 		fp = (fp << 1) + gear[buffer[breakpoint]]
 		if (fp & d.masks.L) == 0 {
-			return breakpoint
+			return breakpoint, fp
 		}
 	}
 
-	return breakpoint
+	return breakpoint, fp
 }
 
 /**
