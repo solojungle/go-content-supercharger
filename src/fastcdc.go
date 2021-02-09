@@ -61,6 +61,26 @@ func NewMask() *Mask {
 	}
 }
 
+
+func NewOptions(min, max, norm uint) (Options, error) {
+	// Populate object
+	opts := &Options{
+		minSize:  min,
+		maxSize:  max,
+		normSize: norm,
+	}
+
+	validate := validator.New()
+	err := validate.Struct(opts)
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil, err
+	}
+
+
+	return opts, nil
+}
+
 // NewDivider creates an interface/object to chunk file
 func NewDivider(rd io.Reader, opts Options) (*Divider, error) {
 

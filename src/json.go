@@ -25,9 +25,9 @@ type ChunkInformation struct {
 	duplicate int `json:"duplicate"`
 }
 
-func writeJSON(p Progress) error {
+func writeJSON(file string, p Progress) error {
 
-	f, err := os.OpenFile("progress.json", os.O_CREATE, 0644)
+	f, err := os.OpenFile(file, os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func writeJSON(p Progress) error {
 		return err
 	}
 
-	err = ioutil.WriteFile("progress.json", progressJSON, 0644)
+	err = ioutil.WriteFile(file, progressJSON, 0644)
 	if err != nil {
 		return err
 	}
@@ -47,13 +47,13 @@ func writeJSON(p Progress) error {
 	return nil
 }
 
-func readJSON() (Progress, error) {
+func readJSON(file string) (Progress, error) {
 	// File doesn't exist
-	if _, err := os.Stat("progress.json"); os.IsNotExist(err) {
+	if _, err := os.Stat(file); os.IsNotExist(err) {
 		return Progress{}, err
 	}
 
-	f, err := os.Open("progress.json")
+	f, err := os.Open(file)
 	if err != nil {
 		return Progress{}, err
 	}

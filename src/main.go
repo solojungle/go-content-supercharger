@@ -1,27 +1,91 @@
 package main
 
-import "os"
+import (
+	"io"
+	"io/ioutil"
+	"os"
+	"strconv"
+)
 
 func main() {}
 
-func generateChunks(path string) {
+func generateChunks(path string) error {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return
+		return err
 	}
-
-	// release_manifest.bin
-
 	defer f.Close()
 
-	// Store in hashtable
+	progress, err := readJSON("progress.json")
+	if err != nil {
+		return err
+	}
 
-	// get chunks from files
-	// save chunks
-	// create manifest
-	//
+	// File was empty, start a new
+	if (Progress{}) == progress {
+	}
 
+	opts, err := NewOptions(miB/4, miB*4, miB)
+	if err != nil {
+		return err
+	}
+
+	divider, err := NewDivider(f, opts)
+	if err != nil {
+		return err
+	}
+
+	for {
+		chunk, err := divider.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			return err
+		}
+
+		err = saveChunk("/chunks", chunk)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func saveChunk(path string, c Chunk) error {
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		os.Mkdir(path, 0777)
+	}
+
+	filename := strconv.FormatUint(c.fingerprint, 16)
+
+	// Check if chunk already exists
+	flag := isExists(filename)
+	if flag {
+		return nil
+	}
+
+	data, err := CompressLevel(path+filename, c.data, 19)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(path+filename, c.data, 0644)
+
+	return err
+}
+
+func isExists(path string) bool {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }
 
 func generatePatches(dir string) {
