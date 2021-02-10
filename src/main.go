@@ -1,14 +1,26 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"strconv"
+
+	"github.com/DataDog/zstd"
 )
 
-func main() {}
+func main() {
 
+	err := generateChunks("testfiles/c.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+}
+
+// Store/load chunks in HashMap (Faster than checking files)
 func generateChunks(path string) error {
 
 	f, err := os.Open(path)
@@ -17,16 +29,16 @@ func generateChunks(path string) error {
 	}
 	defer f.Close()
 
-	progress, err := readJSON("progress.json")
-	if err != nil {
-		return err
-	}
+	// progress, err := readJSON("progress.json")
+	// if err != nil {
+	// 	return err
+	// }
 
-	// File was empty, start a new
-	if (Progress{}) == progress {
-	}
+	// // File was empty, start a new
+	// if (Progress{}) == progress {
+	// }
 
-	opts, err := NewOptions(miB/4, miB*4, miB)
+	opts, err := NewOptions(kiB/4, kiB*4, kiB)
 	if err != nil {
 		return err
 	}
@@ -46,7 +58,7 @@ func generateChunks(path string) error {
 			return err
 		}
 
-		err = saveChunk("/chunks", chunk)
+		err = saveChunk("chunks/", chunk)
 		if err != nil {
 			return err
 		}
@@ -69,12 +81,14 @@ func saveChunk(path string, c Chunk) error {
 		return nil
 	}
 
-	data, err := CompressLevel(path+filename, c.data, 19)
+	_, err := zstd.CompressLevel(c.data, c.data, 19)
 	if err != nil {
 		return err
 	}
 
 	err = ioutil.WriteFile(path+filename, c.data, 0644)
+
+	fmt.Println("Saving chunk hash: ", c.fingerprint)
 
 	return err
 }

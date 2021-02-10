@@ -13,10 +13,10 @@ const (
 )
 
 type Options struct {
-	minSize       uint `validate:"min=1"`
-	maxSize       uint `validate:"min=0"` // Larger than min
-	normSize      uint `validate:"min=0"` // Larger than min, less than max
-	normalization int  `validate:"min=0,max=2"`
+	minSize       int `validate:"min=1"`
+	maxSize       int `validate:"min=0"` // Larger than min
+	normSize      int `validate:"min=0"` // Larger than min, less than max
+	normalization int `validate:"min=0,max=2"`
 	seed          uint64
 	bufferSize    int
 }
@@ -40,9 +40,9 @@ type Mask struct {
 }
 
 type Divider struct {
-	minSize  uint
-	maxSize  uint
-	normSize uint
+	minSize  int
+	maxSize  int
+	normSize int
 	masks    *Mask
 
 	rd     io.Reader
@@ -61,28 +61,27 @@ func NewMask() *Mask {
 	}
 }
 
-
-func NewOptions(min, max, norm uint) (Options, error) {
+func NewOptions(min, max, norm int) (*Options, error) {
 	// Populate object
 	opts := &Options{
-		minSize:  min,
-		maxSize:  max,
-		normSize: norm,
+		minSize:    min,
+		maxSize:    max,
+		normSize:   norm,
+		bufferSize: max * 2,
 	}
 
 	validate := validator.New()
 	err := validate.Struct(opts)
 	if err != nil {
 		fmt.Println(err.Error())
-		return nil, err
+		return opts, err
 	}
-
 
 	return opts, nil
 }
 
 // NewDivider creates an interface/object to chunk file
-func NewDivider(rd io.Reader, opts Options) (*Divider, error) {
+func NewDivider(rd io.Reader, opts *Options) (*Divider, error) {
 
 	// Check if options are valid
 	validate := validator.New()
@@ -157,9 +156,9 @@ func (d *Divider) Next() (Chunk, error) {
 	breakpoint, fp := d.fastCDC(d.buffer[d.cursor:])
 
 	chunk := Chunk{
-		offset: d.offset,
-		length: breakpoint,
-		data: d.buffer[d.cursor : d.cursor + breakpoint]
+		offset:      d.offset,
+		length:      breakpoint,
+		data:        d.buffer[d.cursor : d.cursor+breakpoint],
 		fingerprint: fp,
 	}
 
@@ -170,9 +169,9 @@ func (d *Divider) Next() (Chunk, error) {
 }
 
 // Return chunking breakpoint, and hash
-func (d *Divider) fastCDC(buffer []byte) (uint, uint64) {
+func (d *Divider) fastCDC(buffer []byte) (int, uint64) {
 
-	bufferLength := uint(len(buffer))
+	bufferLength := len(buffer)
 	breakpoint := d.minSize
 	normSize := d.normSize
 
