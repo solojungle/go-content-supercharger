@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,6 +14,9 @@ import (
 
 func main() {
 
+	job := NewJob("testfiles")
+	job.generateChunks()
+
 	err := generateChunks("testfiles/c.txt")
 	if err != nil {
 		log.Fatal(err)
@@ -20,23 +24,48 @@ func main() {
 
 }
 
+// Holds state of job
+type Job struct {
+	dir    string
+	file   string
+	chunks map[string]bool
+}
+
+// NewJob inits the state for creating chunks for a dir
+func NewJob(dir string) (Job, error) {
+
+	if _, err := os.Stat("/path/to/whatever"); os.IsNotExist(err) {
+		return Job{}, errors.New("directory doesn't exist")
+	}
+
+	f, err := os.Open(dir)
+	if err != nil {
+		return Job{}, err
+	}
+	defer f.Close()
+
+	file, err := f.Readdirnames(1) // Or f.Readdir(1)
+	if err == io.EOF {
+		return Job{}, errors.New("directory is empty")
+	}
+
+	return Job{
+		dir:    dir,
+		file:   file[0],
+		chunks: make(map[string]bool),
+	}, nil
+}
+
 // Store/load chunks in HashMap (Faster than checking files)
-func generateChunks(path string) error {
+func (j *Job) generateChunks() error {
+
+	path := j.file
 
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
-	// progress, err := readJSON("progress.json")
-	// if err != nil {
-	// 	return err
-	// }
-
-	// // File was empty, start a new
-	// if (Progress{}) == progress {
-	// }
 
 	opts, err := NewOptions(kiB/4, kiB*4, kiB)
 	if err != nil {
@@ -49,6 +78,7 @@ func generateChunks(path string) error {
 	}
 
 	for {
+		// Start looping through chunks
 		chunk, err := divider.Next()
 		if err != nil {
 			if err == io.EOF {
@@ -58,13 +88,22 @@ func generateChunks(path string) error {
 			return err
 		}
 
-		err = saveChunk("chunks/", chunk)
-		if err != nil {
-			return err
+		// Chunk doesn't exist
+		if !j.chunks[string(chunk.fingerprint)] {
+			err = saveChunk("chunks/", chunk)
+			if err != nil {
+				return err
+			}
+
+			j.chunks[string(chunk.fingerprint)] = true
 		}
 	}
 
 	return nil
+}
+
+func generateBundles() {
+
 }
 
 func saveChunk(path string, c Chunk) error {
