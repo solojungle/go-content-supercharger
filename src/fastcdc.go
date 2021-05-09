@@ -26,6 +26,7 @@ type Chunk struct {
 	length      int
 	data        []byte
 	fingerprint uint64
+	md5         string
 }
 
 type Mask struct {
