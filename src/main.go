@@ -2,12 +2,14 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/DataDog/zstd"
 	// "strconv"
@@ -85,20 +87,36 @@ func NewJob(dir string) (Job, error) {
 **/
 func (j *Job) Run() error {
 
-	// Open dir entry point
-	files, err := ioutil.ReadDir(j.dir)
+	// Create options for divider
+	opts, err := NewOptions(kiB/4, kiB*4, kiB)
 	if err != nil {
-		return nil
+		return err
+	}
+
+	// Create list of files
+	files := make([]os.FileInfo, 0)
+
+	// Use walk to get all sub-directories
+	err = filepath.Walk(j.dir, func(path string, f os.FileInfo, err error) error {
+
+		// Append only files to filelist
+		if !f.IsDir() {
+			files = append(files, f)
+		}
+
+		return err
+	})
+
+	fmt.Println(files)
+
+	if err != nil {
+		return err
 	}
 
 	// Loop over files in dir
 	for _, fileInfo := range files {
-		opts, err := NewOptions(kiB/4, kiB*4, kiB)
-		if err != nil {
-			return err
-		}
 
-		f, err := os.Open(fileInfo.Name())
+		f, err := os.Open(j.dir + "/" + fileInfo.Name())
 		if err != nil {
 			return err
 		}
@@ -121,10 +139,7 @@ func (j *Job) Run() error {
 				return err
 			}
 
-			// Convert [16]byte to string
-			b := md5.Sum(chunk.data)
-			hashKey := string(b[:])
-			chunk.md5 = hashKey
+			hashKey := chunk.hashChunkMd5()
 
 			// Check if chunk does not exist
 			if !j.hashes[hashKey] {
@@ -161,8 +176,8 @@ func (j *Job) Save(dir string) error {
 
 		// Check if chunk already exists
 		if _, err := os.Stat(filePath); err != nil {
-			if os.IsNotExist(err) {
-				fmt.Println("chunk already exists: ", chunk.md5)
+			if !os.IsNotExist(err) {
+				fmt.Println("Chunk already exists: ", chunk.md5)
 				continue
 			}
 		}
@@ -173,6 +188,7 @@ func (j *Job) Save(dir string) error {
 			return err
 		}
 
+		// Save chunk
 		err = ioutil.WriteFile(filePath, chunk.data, 0644)
 		if err != nil {
 			return err
@@ -182,4 +198,10 @@ func (j *Job) Save(dir string) error {
 	}
 
 	return nil
+}
+
+func (c *Chunk) hashChunkMd5() string {
+	hash := md5.Sum(c.data)
+	c.md5 = hex.EncodeToString(hash[:])
+	return c.md5
 }
