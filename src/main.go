@@ -1,184 +1,207 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"strconv"
+	"path/filepath"
 
 	"github.com/DataDog/zstd"
+	// "strconv"
 )
+
+// Used to store job progress
+type Job struct {
+	dir    string
+	chunks []Chunk
+
+	/*
+		https://golang.org/doc/effective_go#maps
+		An attempt to fetch a map value with a key that is not present
+		in the map will return the zero value for the type of the entries in the map
+	**/
+	hashes map[string]bool
+}
 
 func main() {
 
-	job := NewJob("testfiles")
-	job.generateChunks()
-
-	err := generateChunks("testfiles/c.txt")
+	// Pass filedir to NewJob()
+	job, err := NewJob("testfiles")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-}
-
-// Holds state of job
-type Job struct {
-	dir    string
-	file   string
-	chunks map[string]bool
-}
-
-// NewJob inits the state for creating chunks for a dir
-func NewJob(dir string) (Job, error) {
-
-	if _, err := os.Stat("/path/to/whatever"); os.IsNotExist(err) {
-		return Job{}, errors.New("directory doesn't exist")
+	// Set all chunks in Job state
+	err = job.Run()
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	// Save chunks to specific dir
+	err = job.Save("./out")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+/*
+	NewJob() sets a starting point for Divider to use
+**/
+func NewJob(dir string) (Job, error) {
+
+	// Check to see if dir exists, and is a dir
+	info, err := os.Stat(dir)
+	if err != nil {
+		return Job{}, err
+	} else if !info.IsDir() {
+		return Job{}, errors.New("is not a directory")
+	}
+
+	// Get dir pointer
 	f, err := os.Open(dir)
 	if err != nil {
 		return Job{}, err
 	}
 	defer f.Close()
 
-	file, err := f.Readdirnames(1) // Or f.Readdir(1)
+	// Check if dir is empty before creating entry point
+	_, err = f.Readdirnames(1)
 	if err == io.EOF {
 		return Job{}, errors.New("directory is empty")
 	}
 
 	return Job{
 		dir:    dir,
-		file:   file[0],
-		chunks: make(map[string]bool),
+		hashes: make(map[string]bool),
 	}, nil
 }
 
-// Store/load chunks in HashMap (Faster than checking files)
-func (j *Job) generateChunks() error {
+/*
+	Run() loops over a directory and determines redundant data in files will
+	set Job state to valid chunks
+**/
+func (j *Job) Run() error {
 
-	path := j.file
-
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
+	// Create options for divider
 	opts, err := NewOptions(kiB/4, kiB*4, kiB)
 	if err != nil {
 		return err
 	}
 
-	divider, err := NewDivider(f, opts)
+	// Create list of files
+	files := make([]os.FileInfo, 0)
+
+	// Use walk to get all sub-directories
+	err = filepath.Walk(j.dir, func(path string, f os.FileInfo, err error) error {
+
+		// Append only files to filelist
+		if !f.IsDir() {
+			files = append(files, f)
+		}
+
+		return err
+	})
+
+	fmt.Println(files)
+
 	if err != nil {
 		return err
 	}
 
-	for {
-		// Start looping through chunks
-		chunk, err := divider.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
+	// Loop over files in dir
+	for _, fileInfo := range files {
 
+		f, err := os.Open(j.dir + "/" + fileInfo.Name())
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		// Get chunks from file
+		divider, err := NewDivider(f, opts)
+		if err != nil {
 			return err
 		}
 
-		// Chunk doesn't exist
-		if !j.chunks[string(chunk.fingerprint)] {
-			err = saveChunk("chunks/", chunk)
+		for {
+			// Start looping through chunks
+			chunk, err := divider.Next()
 			if err != nil {
+				if err == io.EOF {
+					break
+				}
+
 				return err
 			}
 
-			j.chunks[string(chunk.fingerprint)] = true
+			hashKey := chunk.hashChunkMd5()
+
+			// Check if chunk does not exist
+			if !j.hashes[hashKey] {
+
+				// Set toggle
+				j.hashes[hashKey] = true
+
+				// Add chunk to mem
+				j.chunks = append(j.chunks, chunk)
+			}
 		}
 	}
 
 	return nil
 }
 
-func generateBundles() {
+/*
+	Save() loops over chunks in the job, saves them
+	then resets the buffer
+**/
+func (j *Job) Save(dir string) error {
 
-}
-
-func saveChunk(path string, c Chunk) error {
-
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		os.Mkdir(path, 0777)
+	// Create dir if it doesn't exist
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		os.Mkdir(dir, 0700)
 	}
 
-	filename := strconv.FormatUint(c.fingerprint, 16)
+	// Save each chunk
+	for _, chunk := range j.chunks {
 
-	// Check if chunk already exists
-	flag := isExists(filename)
-	if flag {
-		return nil
-	}
+		filePath := dir + "/" + chunk.md5
 
-	_, err := zstd.CompressLevel(c.data, c.data, 19)
-	if err != nil {
-		return err
-	}
+		_ = filePath
 
-	err = ioutil.WriteFile(path+filename, c.data, 0644)
-
-	fmt.Println("Saving chunk hash: ", c.fingerprint)
-
-	return err
-}
-
-func isExists(path string) bool {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return false
+		// Check if chunk already exists
+		if _, err := os.Stat(filePath); err != nil {
+			if !os.IsNotExist(err) {
+				fmt.Println("Chunk already exists: ", chunk.md5)
+				continue
+			}
 		}
+
+		// Compress/overwrite chunk data
+		_, err := zstd.CompressLevel(chunk.data, chunk.data, 19)
+		if err != nil {
+			return err
+		}
+
+		// Save chunk
+		err = ioutil.WriteFile(filePath, chunk.data, 0644)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Saving chunk hash: ", chunk.md5)
 	}
-	return true
+
+	return nil
 }
 
-func generatePatches(dir string) {
-
-	// We start by applying the content-defined chunking algorithm
-	// to each file to determine which chunks it has.
-
-	// Once we’ve determined the list of chunks, we hash and compress them.
-	// The 64-bit hash value is used as the unique identifier of a chunk.
-	// This allows us to quickly determine when a chunk is found in more than
-	// one location so we can deduplicate it
-
-	// For compressing chunks we use Zstandard. We compress using level 19,
-	// which gives us very good compression ratios while keeping
-	// decompression speeds high.
-
-	// After compression, we bundle chunks together into a small
-	// number of files that will end up on the CDN.
-
-	// These bundles are just concatenations of related chunks that
-	// clients will usually download in bulk. (ABCD.bundle)
-
-	// We compress each chunk separately so clients can download
-	// some chunks individually if that’s all they need.
-
-	// Bundles are named after their unique 64-bit identifier.
-	// We compute this ID based on the IDs of the chunks in them,
-	// so two bundles with the same contents will have the same name
-
-	// the next step is to write the release manifest.
-	// The manifest stores information about all the
-	// files, chunks, and bundles that are part of a release
-	// and it’s about 8 MB.
-
-	// The manifest uses the FlatBuffers binary format
-	// to store this information
-
-	// patchdata-service. This service runs in AWS and is
-	// in charge of deploying the data to S3, which serves as
-	// our global CDN origin.
-
-	// Clients will only load a release manifest if it’s properly signed.
+func (c *Chunk) hashChunkMd5() string {
+	hash := md5.Sum(c.data)
+	c.md5 = hex.EncodeToString(hash[:])
+	return c.md5
 }
