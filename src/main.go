@@ -139,6 +139,7 @@ func (j *Job) Run() error {
 				return err
 			}
 
+			// Generate md5 hash from data
 			hashKey := chunk.hashChunkMd5()
 
 			// Check if chunk does not exist
@@ -172,18 +173,16 @@ func (j *Job) Save(dir string) error {
 
 		filePath := dir + "/" + chunk.md5
 
-		_ = filePath
-
 		// Check if chunk already exists
-		if _, err := os.Stat(filePath); err != nil {
-			if !os.IsNotExist(err) {
-				fmt.Println("Chunk already exists: ", chunk.md5)
-				continue
-			}
+		_, err := os.Stat(filePath)
+		if err == nil {
+			fmt.Println("Chunk already exists not saving: ", chunk.md5)
+			continue
 		}
 
+		// File does not exist create new chunk
 		// Compress/overwrite chunk data
-		_, err := zstd.CompressLevel(chunk.data, chunk.data, 19)
+		_, err = zstd.CompressLevel(chunk.data, chunk.data, 19)
 		if err != nil {
 			return err
 		}
