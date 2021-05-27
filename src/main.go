@@ -199,6 +199,9 @@ func (j *Job) Save(dir string) error {
 	return nil
 }
 
+/*
+	hashChunkMd5() converts []byte hex values (file hash) into a ASCII string
+**/
 func (c *Chunk) hashChunkMd5() string {
 	hash := md5.Sum(c.data)
 	c.md5 = hex.EncodeToString(hash[:])
